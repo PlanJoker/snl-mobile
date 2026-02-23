@@ -1,42 +1,91 @@
+// Design: Dark Brutalism + Neon Accent
+// Brand: #012E2B bg, #FFDC73 accent, Space Grotesk + Inter
+import { useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
-import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
+import { useUserStore } from "./stores/userStore";
+import { useAppStore } from "./stores/appStore";
+import BottomNav from "./components/BottomNav";
+import Landing from "./pages/Landing";
+import Auth from "./pages/Auth";
+import HomePage from "./pages/Home";
+import CalendarPage from "./pages/Calendar";
+import WAMPage from "./pages/WAM";
+import GalleryPage from "./pages/Gallery";
+import AdminPage from "./pages/Admin";
 
+type AppScreen = "landing" | "login" | "register" | "app";
 
-function Router() {
-  return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
+export default function App() {
+  const { currentUserId } = useUserStore();
+  const { activeTab, isAdminMode } = useAppStore();
+  const [screen, setScreen] = useState<AppScreen>(currentUserId ? "app" : "landing");
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
+  const handleAuthSuccess = (isAdmin?: boolean) => {
+    setScreen("app");
+  };
 
-function App() {
-  return (
-    <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+  // If user is already logged in, go straight to app
+  if (currentUserId && screen === "landing") {
+    setScreen("app");
+  }
+
+  if (screen === "landing") {
+    return (
+      <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <div className="max-w-[480px] mx-auto min-h-screen">
+            <Landing
+              onLogin={() => setScreen("login")}
+              onRegister={() => setScreen("register")}
+            />
+          </div>
         </TooltipProvider>
       </ThemeProvider>
-    </ErrorBoundary>
+    );
+  }
+
+  if (screen === "login" || screen === "register") {
+    return (
+      <ThemeProvider defaultTheme="dark">
+        <TooltipProvider>
+          <Toaster />
+          <div className="max-w-[480px] mx-auto min-h-screen">
+            <Auth
+              mode={screen}
+              onBack={() => setScreen("landing")}
+              onSuccess={handleAuthSuccess}
+              onToggleMode={() => setScreen(screen === "login" ? "register" : "login")}
+            />
+          </div>
+        </TooltipProvider>
+      </ThemeProvider>
+    );
+  }
+
+  const renderPage = () => {
+    if (isAdminMode && activeTab === "admin") return <AdminPage />;
+    switch (activeTab) {
+      case "home": return <HomePage />;
+      case "calendar": return <CalendarPage />;
+      case "wam": return <WAMPage />;
+      case "gallery": return <GalleryPage />;
+      case "admin": return isAdminMode ? <AdminPage /> : <HomePage />;
+      default: return <HomePage />;
+    }
+  };
+
+  return (
+    <ThemeProvider defaultTheme="dark">
+      <TooltipProvider>
+        <Toaster />
+        <div className="max-w-[480px] mx-auto min-h-screen bg-[#012E2B] relative">
+          {renderPage()}
+          <BottomNav />
+        </div>
+      </TooltipProvider>
+    </ThemeProvider>
   );
 }
-
-export default App;
