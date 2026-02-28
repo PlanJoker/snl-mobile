@@ -5,6 +5,8 @@ import { Camera, Upload, Globe, CheckCircle2, X, Trash2, Loader2, Image } from "
 import { toast } from "sonner";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
+import { useAdminStore } from "../stores/adminStore";
+import { useUserStore } from "../stores/userStore";
 
 export default function GalleryPage() {
   const { adminPhotos: galleryPhotos } = useAdminStore();
@@ -237,8 +239,8 @@ export default function GalleryPage() {
                       {!photo.submitted ? (
                         <button
                           type="button"
-                          onClick={() => (() => {})({ id: photo.id })}
-                          disabled={submitMut.isPending}
+                          onClick={() => {}}
+                          disabled={false}
                           className="mt-1.5 w-full flex items-center justify-center gap-1 bg-[#012E2B] border border-[rgba(255,220,115,0.2)] rounded-lg py-1.5 text-[#FFDC73] text-[10px] font-bold disabled:opacity-50"
                         >
                           <Globe size={10} /> Submit to Gallery
