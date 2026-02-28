@@ -29,12 +29,6 @@ export default function HomePage() {
   const nextSession = [...sessions].sort((a, b) => a.date.localeCompare(b.date))[0];
   const pinnedAnnouncements = announcements.filter((a) => a.pinned).slice(0, 2);
 
-  // Simple WAM calculation from DB data
-  const calculateWAM = () => {
-    // We'll show semester count as a proxy; full WAM calc is on WAM page
-    return semesters.length > 0 ? wamSemesters.length : null;
-  };
-
   const handleAddGoal = () => {
     if (!goalForm.semesterName || !goalForm.targetWAM) return;
     addGoal({
