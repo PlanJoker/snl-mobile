@@ -1,14 +1,17 @@
 // Design: Dark Brutalism + Neon Accent — WAM Calculator
 // Brand: #012E2B bg, #FFDC73 accent, JetBrains Mono for numbers
 import { useState } from "react";
-import { Plus, Trash2, ChevronDown, ChevronUp, BookOpen, Calculator, Loader2, FlaskConical } from "lucide-react";
-import { trpc } from "../lib/trpc";
-import { toast } from "sonner";
+import { Plus, Trash2, ChevronDown, ChevronUp, TrendingUp, BookOpen, Calculator } from "lucide-react";
+import { useWAMStore, type Semester, type Subject } from "../stores/wamStore";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 
 const GRADE_COLORS: Record<string, string> = {
-  HD: "#4ade80", D: "#FFDC73", C: "#fb923c", P: "#f87171", N: "#ef4444",
+  HD: "#4ade80",
+  D: "#FFDC73",
+  C: "#fb923c",
+  P: "#f87171",
+  N: "#ef4444",
 };
 
 function getGrade(mark: number): string {
@@ -27,103 +30,74 @@ function getMarkColor(mark: number): string {
   return "#ef4444";
 }
 
-function calculateWAMFromData(semesters: Array<{ subjects: Array<{ mark: number | null; creditPoints: number | null }> }>): number | null {
-  let totalWeighted = 0;
-  let totalCredits = 0;
-  for (const sem of semesters) {
-    for (const sub of sem.subjects) {
-      if (sub.mark !== null && sub.creditPoints !== null) {
-        totalWeighted += sub.mark * sub.creditPoints;
-        totalCredits += sub.creditPoints;
-      }
-    }
-  }
-  return totalCredits > 0 ? totalWeighted / totalCredits : null;
-}
-
-function calculateSemWAM(subjects: Array<{ mark: number | null; creditPoints: number | null }>): number | null {
-  let tw = 0, tc = 0;
-  for (const s of subjects) {
-    if (s.mark !== null && s.creditPoints !== null) { tw += s.mark * s.creditPoints; tc += s.creditPoints; }
-  }
-  return tc > 0 ? tw / tc : null;
-}
-
 export default function WAMPage() {
-  const utils = trpc.useUtils();
-  const { data: semesters = [], isLoading } = trpc.wam.semesters.useQuery();
+  const {
+    semesters, addSemester, removeSemester, updateSemester,
+    addSubject, removeSubject, updateSubject,
+    addAssignment, removeAssignment, updateAssignment,
+    calculateWAM, calculateSemesterWAM,
+  } = useWAMStore();
 
-  const addSemMut = trpc.wam.createSemester.useMutation({
-    onSuccess: () => utils.wam.semesters.invalidate(),
-    onError: () => toast.error("Failed to add semester"),
-  });
-  const delSemMut = trpc.wam.deleteSemester.useMutation({
-    onSuccess: () => utils.wam.semesters.invalidate(),
-  });
-  const addSubMut = trpc.wam.createSubject.useMutation({
-    onSuccess: () => utils.wam.semesters.invalidate(),
-    onError: () => toast.error("Failed to add subject"),
-  });
-  const updateSubMut = trpc.wam.updateSubject.useMutation({
-    onSuccess: () => utils.wam.semesters.invalidate(),
-  });
-  const delSubMut = trpc.wam.deleteSubject.useMutation({
-    onSuccess: () => utils.wam.semesters.invalidate(),
-  });
-  const loadSampleMut = trpc.wam.loadSample.useMutation({
-    onSuccess: () => {
-      utils.wam.semesters.invalidate();
-      toast.success("Sample data loaded!");
-    },
-    onError: () => toast.error("Failed to load sample data"),
-  });
-
-  const [expandedSems, setExpandedSems] = useState<Set<number>>(new Set());
+  const [expandedSems, setExpandedSems] = useState<Set<string>>(new Set<string>());
+  const [expandedSubs, setExpandedSubs] = useState<Set<string>>(new Set<string>());
   const [newSemName, setNewSemName] = useState("");
   const [showSemForm, setShowSemForm] = useState(false);
-  const [addSubjectFor, setAddSubjectFor] = useState<number | null>(null);
-  const [subjectForm, setSubjectForm] = useState({ code: "", name: "", mark: "", creditPoints: "6" });
+  const [addSubjectFor, setAddSubjectFor] = useState<string | null>(null);
+  const [subjectForm, setSubjectForm] = useState({ code: "", name: "", mark: "", creditPoints: "" });
 
-  const wam = calculateWAMFromData(semesters as Array<{ subjects: Array<{ mark: number | null; creditPoints: number | null }> }>);
+  const wam = calculateWAM();
 
-  const toggleSem = (id: number) => {
+  const toggleSem = (id: string) => {
     setExpandedSems((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      const next = new Set<string>(Array.from(prev));
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
-  const handleAddSem = () => {
+  const toggleSub = (id: string) => {
+    setExpandedSubs((prev) => {
+      const next = new Set<string>(Array.from(prev));
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleAddSemester = () => {
     if (!newSemName.trim()) return;
-    addSemMut.mutate({ name: newSemName.trim() });
+    addSemester(newSemName.trim());
     setNewSemName("");
     setShowSemForm(false);
   };
 
-  const handleAddSubject = (semId: number) => {
-    if (!subjectForm.name.trim()) return;
-    addSubMut.mutate({
-      semesterId: semId,
-      code: subjectForm.code || "SUBJ0000",
-      name: subjectForm.name,
-      mark: subjectForm.mark ? parseFloat(subjectForm.mark) : undefined,
-      creditPoints: parseInt(subjectForm.creditPoints) || 6,
-    });
-    setSubjectForm({ code: "", name: "", mark: "", creditPoints: "6" });
+  const handleAddSubject = (semId: string) => {
+    if (!subjectForm.code && !subjectForm.name) return;
+    addSubject(semId, subjectForm.code, subjectForm.name);
+    // Update mark/credits if provided
+    const sem = semesters.find((s) => s.id === semId);
+    if (sem && (subjectForm.mark || subjectForm.creditPoints)) {
+      // We need the new subject id - get it after add
+      setTimeout(() => {
+        const updatedSem = useWAMStore.getState().semesters.find((s) => s.id === semId);
+        const lastSub = updatedSem?.subjects[updatedSem.subjects.length - 1];
+        if (lastSub) {
+          updateSubject(semId, lastSub.id, {
+            mark: subjectForm.mark ? parseFloat(subjectForm.mark) : null,
+            creditPoints: subjectForm.creditPoints ? parseFloat(subjectForm.creditPoints) : null,
+          });
+        }
+      }, 0);
+    }
+    setSubjectForm({ code: "", name: "", mark: "", creditPoints: "" });
     setAddSubjectFor(null);
   };
 
-  const handleLoadSample = () => {
-    if (semesters.length > 0) {
-      if (!confirm("This will replace all your WAM data with sample data. Continue?")) return;
-    }
-    loadSampleMut.mutate();
-  };
-
-  if (isLoading) return (
-    <div className="page-container bg-[#012E2B] flex items-center justify-center">
-      <Loader2 className="text-[#FFDC73] animate-spin" size={32} />
+  const WAMBar = ({ value, max = 100 }: { value: number; max?: number }) => (
+    <div className="h-1.5 bg-[#012E2B] rounded-full overflow-hidden">
+      <div
+        className="h-full rounded-full transition-all duration-500"
+        style={{ width: `${(value / max) * 100}%`, background: getMarkColor(value) }}
+      />
     </div>
   );
 
@@ -131,69 +105,69 @@ export default function WAMPage() {
     <div className="page-container bg-[#012E2B]">
       <PageHeader
         title="WAM Calculator"
-        subtitle="Track your academic performance"
+        subtitle="Weighted Average Mark"
         accent
         right={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleLoadSample}
-              disabled={loadSampleMut.isPending}
-              className="flex items-center gap-1.5 bg-[#0a3d39] border border-[rgba(255,220,115,0.2)] text-[#FFDC73] rounded-xl px-3 py-1.5 text-xs font-bold disabled:opacity-50"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            >
-              <FlaskConical size={12} />
-              {loadSampleMut.isPending ? "Loading..." : "Sample"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSemForm(!showSemForm)}
-              className="flex items-center gap-1.5 bg-[#FFDC73] text-[#012E2B] rounded-xl px-3 py-1.5 text-xs font-bold"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            >
-              <Plus size={12} /> Semester
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowSemForm(!showSemForm)}
+            className="flex items-center gap-1.5 bg-[#FFDC73] text-[#012E2B] rounded-xl px-3 py-1.5 text-xs font-bold"
+            style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            <Plus size={12} /> Semester
+          </button>
         }
       />
 
-      <div className="px-4 pt-20 pb-24 flex flex-col gap-4">
-        {/* WAM Summary */}
-        {wam !== null && (
-          <Card glow className="bg-gradient-to-br from-[#0a3d39] to-[#0d4a45]">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                style={{ background: `${getMarkColor(wam)}20`, border: `2px solid ${getMarkColor(wam)}40` }}>
-                <span className="text-xl font-black" style={{ color: getMarkColor(wam), fontFamily: "'JetBrains Mono', monospace" }}>
-                  {wam.toFixed(1)}
+      <div className="px-4 pt-2 pb-4 flex flex-col gap-4">
+        {/* Overall WAM */}
+        <Card glow className="bg-gradient-to-br from-[#0a3d39] to-[#0d4a45]">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-[#8fa8a5] text-xs uppercase tracking-wide font-semibold">Cumulative WAM</p>
+              <div className="flex items-end gap-2 mt-1">
+                <span
+                  className="text-4xl font-black mono"
+                  style={{ color: wam !== null ? getMarkColor(wam) : "#8fa8a5" }}
+                >
+                  {wam !== null ? wam.toFixed(2) : "—"}
                 </span>
-              </div>
-              <div>
-                <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Cumulative WAM</p>
-                <p className="text-[#8fa8a5] text-xs">{semesters.length} semester{semesters.length !== 1 ? "s" : ""} tracked</p>
-                <p className="text-xs mt-1 font-semibold" style={{ color: getMarkColor(wam) }}>
-                  {wam >= 80 ? "High Distinction" : wam >= 70 ? "Distinction" : wam >= 60 ? "Credit" : wam >= 50 ? "Pass" : "Fail"}
-                </p>
+                {wam !== null && (
+                  <span className="text-sm font-bold mb-1" style={{ color: getMarkColor(wam) }}>
+                    {getGrade(wam)}
+                  </span>
+                )}
               </div>
             </div>
-          </Card>
-        )}
+            <div className="w-14 h-14 rounded-2xl bg-[#012E2B] flex items-center justify-center">
+              <Calculator size={24} className="text-[#FFDC73]" />
+            </div>
+          </div>
+          {wam !== null && <WAMBar value={wam} />}
+          <div className="flex gap-3 mt-3">
+            {Object.entries(GRADE_COLORS).map(([grade, color]) => (
+              <div key={grade} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+                <span className="text-[10px] text-[#8fa8a5]">{grade}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
 
         {/* Add Semester Form */}
         {showSemForm && (
           <Card>
+            <p className="text-[#F8F8FF] text-sm font-bold mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>New Semester</p>
             <div className="flex gap-2">
               <input
                 type="text"
                 placeholder="e.g. Semester 1 2025"
                 value={newSemName}
                 onChange={(e) => setNewSemName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddSem()}
+                onKeyDown={(e) => e.key === "Enter" && handleAddSemester()}
                 className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
               />
-              <button type="button" onClick={handleAddSem} disabled={addSemMut.isPending}
-                className="bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2.5 text-sm font-bold disabled:opacity-50"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              <button type="button" onClick={handleAddSemester} className="bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2.5 text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                 Add
               </button>
             </div>
@@ -204,154 +178,217 @@ export default function WAMPage() {
         {semesters.length === 0 ? (
           <Card>
             <div className="flex flex-col items-center gap-3 py-6">
-              <Calculator size={32} className="text-[#8fa8a5]" />
-              <p className="text-[#8fa8a5] text-sm text-center">No semesters yet.<br />Add a semester or load sample data to get started.</p>
-              <div className="flex gap-2 flex-wrap justify-center">
-                <button type="button" onClick={() => setShowSemForm(true)}
-                  className="flex items-center gap-2 bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2 text-sm font-bold"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  <Plus size={14} /> Add Semester
-                </button>
-                <button type="button" onClick={handleLoadSample} disabled={loadSampleMut.isPending}
-                  className="flex items-center gap-2 bg-[#0a3d39] border border-[rgba(255,220,115,0.2)] text-[#FFDC73] rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-50"
-                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  <FlaskConical size={14} /> {loadSampleMut.isPending ? "Loading..." : "Load Sample"}
-                </button>
-              </div>
+              <BookOpen size={32} className="text-[#8fa8a5]" />
+              <p className="text-[#8fa8a5] text-sm text-center">No semesters yet.<br />Add your first semester to start tracking.</p>
+              <button type="button" onClick={() => setShowSemForm(true)} className="flex items-center gap-2 bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2 text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                <Plus size={14} /> Add Semester
+              </button>
             </div>
           </Card>
         ) : (
           semesters.map((sem) => {
+            const semWAM = calculateSemesterWAM(sem.id);
             const isExpanded = expandedSems.has(sem.id);
-            const semWAM = calculateSemWAM(sem.subjects as Array<{ mark: number | null; creditPoints: number | null }>);
             return (
-              <Card key={sem.id} className="p-0 overflow-hidden">
-                {/* Semester Header — use div+role to avoid nested <button> inside <button> */}
-                <div
-                  role="button"
-                  tabIndex={0}
+              <div key={sem.id} className="bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-2xl overflow-hidden">
+                {/* Semester Header */}
+                <button
+                  type="button"
                   onClick={() => toggleSem(sem.id)}
-                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleSem(sem.id)}
-                  className="w-full flex items-center justify-between p-4 cursor-pointer select-none"
+                  className="w-full flex items-center justify-between px-4 py-3"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-[#FFDC73]/10 border border-[#FFDC73]/20 flex items-center justify-center">
-                      <BookOpen size={14} className="text-[#FFDC73]" />
-                    </div>
-                    <div>
-                      <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{sem.name}</p>
+                    <div className="w-1 h-6 rounded-full bg-[#FFDC73]" />
+                    <div className="text-left">
+                      <p className="text-[#F8F8FF] text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{sem.name}</p>
                       <p className="text-[#8fa8a5] text-xs">{sem.subjects.length} subject{sem.subjects.length !== 1 ? "s" : ""}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     {semWAM !== null && (
-                      <span className="text-sm font-black" style={{ color: getMarkColor(semWAM), fontFamily: "'JetBrains Mono', monospace" }}>
+                      <span className="mono text-sm font-bold" style={{ color: getMarkColor(semWAM) }}>
                         {semWAM.toFixed(1)}
                       </span>
                     )}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); delSemMut.mutate({ id: sem.id }); }}
-                        className="text-[#8fa8a5] p-1 active:text-red-400"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                      {isExpanded ? <ChevronUp size={16} className="text-[#8fa8a5]" /> : <ChevronDown size={16} className="text-[#8fa8a5]" />}
-                    </div>
+                    {isExpanded ? <ChevronUp size={16} className="text-[#8fa8a5]" /> : <ChevronDown size={16} className="text-[#8fa8a5]" />}
                   </div>
-                </div>
+                </button>
 
                 {isExpanded && (
-                  <div className="border-t border-[rgba(255,220,115,0.08)] px-4 pb-4">
+                  <div className="px-4 pb-3 flex flex-col gap-2">
                     {/* Subjects */}
-                    {(sem.subjects as Array<{ id: number; code: string | null; name: string; mark: number | null; creditPoints: number }>).map((sub) => (
-                      <div key={sub.id} className="flex items-center gap-3 py-2.5 border-b border-[rgba(255,220,115,0.05)] last:border-0">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            {sub.code && <span className="text-[#FFDC73] text-[10px] font-bold">{sub.code}</span>}
-                            <span className="text-[#F8F8FF] text-xs font-semibold truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{sub.name}</span>
+                    {sem.subjects.map((sub) => {
+                      const isSubExpanded = expandedSubs.has(sub.id);
+                      return (
+                        <div key={sub.id} className="bg-[#012E2B] rounded-xl overflow-hidden">
+                          <div className="flex items-center gap-2 px-3 py-2.5">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[#FFDC73] text-xs font-bold mono">{sub.code || "—"}</span>
+                                <span className="text-[#F8F8FF] text-xs truncate">{sub.name}</span>
+                              </div>
+                              {sub.mark !== null && (
+                                <div className="mt-1">
+                                  <WAMBar value={sub.mark} />
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* Mark input */}
+                              <input
+                                type="number"
+                                placeholder="Mark"
+                                value={sub.mark ?? ""}
+                                onChange={(e) => updateSubject(sem.id, sub.id, { mark: e.target.value ? parseFloat(e.target.value) : null })}
+                                className="w-16 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-lg px-2 py-1 text-[#F8F8FF] text-xs mono text-center outline-none focus:border-[#FFDC73]/40"
+                                min="0"
+                                max="100"
+                              />
+                              {/* CP input */}
+                              <input
+                                type="number"
+                                placeholder="CP"
+                                value={sub.creditPoints ?? ""}
+                                onChange={(e) => updateSubject(sem.id, sub.id, { creditPoints: e.target.value ? parseFloat(e.target.value) : null })}
+                                className="w-12 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-lg px-2 py-1 text-[#F8F8FF] text-xs mono text-center outline-none focus:border-[#FFDC73]/40"
+                              />
+                              <button type="button" onClick={() => removeSubject(sem.id, sub.id)} className="text-[#8fa8a5] active:text-red-400">
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
-                          <p className="text-[#8fa8a5] text-[10px]">{sub.creditPoints} CP</p>
+
+                          {/* Assignments toggle */}
+                          <button
+                            type="button"
+                            onClick={() => toggleSub(sub.id)}
+                            className="w-full flex items-center gap-1 px-3 pb-2 text-[#8fa8a5] text-[10px]"
+                          >
+                            {isSubExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                            Assignments ({sub.assignments.length})
+                          </button>
+
+                          {isSubExpanded && (
+                            <div className="px-3 pb-3 flex flex-col gap-1.5">
+                              {sub.assignments.map((a) => {
+                                const computed = a.userScore !== null && a.maxScore !== null && a.weight !== null
+                                  ? (a.userScore / a.maxScore) * a.weight
+                                  : null;
+                                return (
+                                  <div key={a.id} className="flex items-center gap-2 bg-[#0a3d39] rounded-lg px-2 py-1.5">
+                                    <span className="text-[#F8F8FF] text-[10px] flex-1 truncate">{a.name || "Assignment"}</span>
+                                    <input
+                                      type="number"
+                                      placeholder="Score"
+                                      value={a.userScore ?? ""}
+                                      onChange={(e) => updateAssignment(sem.id, sub.id, a.id, { userScore: e.target.value ? parseFloat(e.target.value) : null })}
+                                      className="w-12 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded px-1.5 py-1 text-[#F8F8FF] text-[10px] mono text-center outline-none"
+                                    />
+                                    <span className="text-[#8fa8a5] text-[10px]">/</span>
+                                    <input
+                                      type="number"
+                                      placeholder="Max"
+                                      value={a.maxScore ?? ""}
+                                      onChange={(e) => updateAssignment(sem.id, sub.id, a.id, { maxScore: e.target.value ? parseFloat(e.target.value) : null })}
+                                      className="w-12 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded px-1.5 py-1 text-[#F8F8FF] text-[10px] mono text-center outline-none"
+                                    />
+                                    <span className="text-[#8fa8a5] text-[10px]">w:</span>
+                                    <input
+                                      type="number"
+                                      placeholder="%"
+                                      value={a.weight ?? ""}
+                                      onChange={(e) => updateAssignment(sem.id, sub.id, a.id, { weight: e.target.value ? parseFloat(e.target.value) : null })}
+                                      className="w-10 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded px-1.5 py-1 text-[#F8F8FF] text-[10px] mono text-center outline-none"
+                                    />
+                                    {computed !== null && (
+                                      <span className="text-[#FFDC73] text-[10px] mono w-10 text-right">{computed.toFixed(1)}%</span>
+                                    )}
+                                    <button type="button" onClick={() => removeAssignment(sem.id, sub.id, a.id)} className="text-[#8fa8a5] active:text-red-400">
+                                      <Trash2 size={11} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                onClick={() => addAssignment(sem.id, sub.id, { name: `Assignment ${sub.assignments.length + 1}`, userScore: null, maxScore: null, weight: null })}
+                                className="flex items-center gap-1 text-[#FFDC73] text-[10px] font-semibold mt-1"
+                              >
+                                <Plus size={10} /> Add assignment
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                      );
+                    })}
+
+                    {/* Add Subject */}
+                    {addSubjectFor === sem.id ? (
+                      <div className="bg-[#012E2B] rounded-xl p-3 flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            placeholder="Code (e.g. FIT3155)"
+                            value={subjectForm.code}
+                            onChange={(e) => setSubjectForm((f) => ({ ...f, code: e.target.value }))}
+                            className="flex-1 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Name"
+                            value={subjectForm.name}
+                            onChange={(e) => setSubjectForm((f) => ({ ...f, name: e.target.value }))}
+                            className="flex-1 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
+                          />
+                        </div>
+                        <div className="flex gap-2">
                           <input
                             type="number"
-                            min="0" max="100"
-                            value={sub.mark ?? ""}
-                            placeholder="–"
-                            onChange={(e) => updateSubMut.mutate({ id: sub.id, mark: e.target.value ? parseFloat(e.target.value) : undefined })}
-                            className="w-14 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-lg px-2 py-1 text-center text-sm font-bold outline-none focus:border-[#FFDC73]/40"
-                            style={{ color: sub.mark !== null ? getMarkColor(sub.mark) : "#8fa8a5", fontFamily: "'JetBrains Mono', monospace" }}
-                          />
-                          {sub.mark !== null && (
-                            <span className="text-[10px] font-bold w-6" style={{ color: GRADE_COLORS[getGrade(sub.mark)] }}>
-                              {getGrade(sub.mark)}
-                            </span>
-                          )}
-                          <button type="button" onClick={() => delSubMut.mutate({ id: sub.id })} className="text-[#8fa8a5] active:text-red-400">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Add Subject Form */}
-                    {addSubjectFor === sem.id ? (
-                      <div className="mt-3 flex flex-col gap-2">
-                        <div className="flex gap-2">
-                          <input type="text" placeholder="Code (e.g. COMP1234)" value={subjectForm.code}
-                            onChange={(e) => setSubjectForm((f) => ({ ...f, code: e.target.value }))}
-                            className="w-28 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-2 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none" />
-                          <input type="text" placeholder="Subject name" value={subjectForm.name}
-                            onChange={(e) => setSubjectForm((f) => ({ ...f, name: e.target.value }))}
-                            className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-2 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none" />
-                        </div>
-                        <div className="flex gap-2">
-                          <input type="number" placeholder="Mark" value={subjectForm.mark}
+                            placeholder="Mark (0-100)"
+                            value={subjectForm.mark}
                             onChange={(e) => setSubjectForm((f) => ({ ...f, mark: e.target.value }))}
-                            className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-2 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none" />
-                          <input type="number" placeholder="Credit Points" value={subjectForm.creditPoints}
+                            className="flex-1 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
+                          />
+                          <input
+                            type="number"
+                            placeholder="Credit Points"
+                            value={subjectForm.creditPoints}
                             onChange={(e) => setSubjectForm((f) => ({ ...f, creditPoints: e.target.value }))}
-                            className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-2 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none" />
+                            className="flex-1 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
+                          />
                         </div>
                         <div className="flex gap-2">
-                          <button type="button" onClick={() => handleAddSubject(sem.id)} disabled={addSubMut.isPending}
-                            className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2 text-xs font-bold disabled:opacity-50"
-                            style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                            Add
+                          <button type="button" onClick={() => handleAddSubject(sem.id)} className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2 text-xs font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                            Add Subject
                           </button>
-                          <button type="button" onClick={() => setAddSubjectFor(null)}
-                            className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2 text-xs">
+                          <button type="button" onClick={() => setAddSubjectFor(null)} className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2 text-xs">
                             Cancel
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <button type="button" onClick={() => setAddSubjectFor(sem.id)}
-                        className="mt-3 w-full flex items-center justify-center gap-1.5 border border-dashed border-[rgba(255,220,115,0.2)] rounded-xl py-2.5 text-[#8fa8a5] text-xs hover:border-[#FFDC73]/40 hover:text-[#FFDC73] transition-colors">
-                        <Plus size={12} /> Add Subject
+                      <button
+                        type="button"
+                        onClick={() => setAddSubjectFor(sem.id)}
+                        className="flex items-center gap-2 text-[#FFDC73] text-xs font-semibold py-1"
+                      >
+                        <Plus size={13} /> Add Subject
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => removeSemester(sem.id)}
+                      className="flex items-center gap-1.5 text-red-400/60 text-xs mt-1"
+                    >
+                      <Trash2 size={12} /> Remove semester
+                    </button>
                   </div>
                 )}
-              </Card>
+              </div>
             );
           })
         )}
-
-        {/* Grade Legend */}
-        <Card>
-          <p className="text-[#8fa8a5] text-xs font-semibold mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Grade Scale</p>
-          <div className="flex gap-2 flex-wrap">
-            {[["HD", "80–100"], ["D", "70–79"], ["C", "60–69"], ["P", "50–59"], ["N", "0–49"]].map(([g, r]) => (
-              <div key={g} className="flex items-center gap-1.5">
-                <span className="text-xs font-bold w-6" style={{ color: GRADE_COLORS[g] }}>{g}</span>
-                <span className="text-[#8fa8a5] text-[10px]">{r}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
       </div>
     </div>
   );

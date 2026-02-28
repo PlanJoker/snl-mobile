@@ -1,6 +1,6 @@
 // Design: Dark Brutalism + Neon Accent — Landing page
 // Brand: #012E2B bg, #FFDC73 accent, Space Grotesk display font
-import { MapPin, Clock, Users, ArrowRight, Star } from "lucide-react";
+import { BookOpen, MapPin, Clock, Users, ArrowRight, Star } from "lucide-react";
 
 interface LandingProps {
   onLogin: () => void;
@@ -18,7 +18,9 @@ export default function Landing({ onLogin, onRegister }: LandingProps) {
 
         {/* Logo / Brand */}
         <div className="flex items-center gap-3 mb-10">
-          <img src="/snlnewlogo.png" alt="SNL Logo" className="w-14 h-14 object-contain" />
+          <div className="w-10 h-10 rounded-xl bg-[#FFDC73] flex items-center justify-center">
+            <BookOpen size={20} className="text-[#012E2B]" strokeWidth={2.5} />
+          </div>
           <div>
             <p className="text-[#FFDC73] text-xs font-semibold tracking-[0.2em] uppercase" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
               Saturday Normal Library
