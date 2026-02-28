@@ -9,7 +9,7 @@ import { useAdminStore } from "../stores/adminStore";
 import { useUserStore } from "../stores/userStore";
 
 export default function GalleryPage() {
-  const { adminPhotos: galleryPhotos } = useAdminStore();
+  const { galleryPhotos } = useAdminStore();
   const { userPhotos, currentUserId, addUserPhoto, removeUserPhoto, markPhotoSubmitted } = useUserStore();
   const myPhotos = userPhotos.filter((p) => p.userId === currentUserId);
   const galleryLoading = false;
