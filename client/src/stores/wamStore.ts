@@ -26,6 +26,29 @@ export interface Semester {
 
 const uid = () => crypto.randomUUID();
 
+const SAMPLE_SEMESTERS: Semester[] = [
+  {
+    id: "sample-sem-1",
+    name: "Semester 1 2024",
+    subjects: [
+      { id: "s1", code: "COMP30023", name: "Computer Systems", mark: 82, creditPoints: 12.5, assignments: [] },
+      { id: "s2", code: "SWEN30006", name: "Software Modelling and Design", mark: 75, creditPoints: 12.5, assignments: [] },
+      { id: "s3", code: "MAST20022", name: "Group Theory and Linear Algebra", mark: 68, creditPoints: 12.5, assignments: [] },
+      { id: "s4", code: "INFO30005", name: "Web Information Technologies", mark: 88, creditPoints: 12.5, assignments: [] },
+    ],
+  },
+  {
+    id: "sample-sem-2",
+    name: "Semester 2 2024",
+    subjects: [
+      { id: "s5", code: "COMP30026", name: "Models of Computation", mark: 79, creditPoints: 12.5, assignments: [] },
+      { id: "s6", code: "SWEN90016", name: "Software Processes and Management", mark: 84, creditPoints: 12.5, assignments: [] },
+      { id: "s7", code: "COMP30024", name: "Artificial Intelligence", mark: 91, creditPoints: 12.5, assignments: [] },
+      { id: "s8", code: "MGMT20001", name: "Organisational Behaviour", mark: 72, creditPoints: 12.5, assignments: [] },
+    ],
+  },
+];
+
 interface WAMStore {
   semesters: Semester[];
   addSemester: (name: string) => void;
@@ -39,6 +62,9 @@ interface WAMStore {
   updateAssignment: (semesterId: string, subjectId: string, assignmentId: string, updates: Partial<Assignment>) => void;
   calculateWAM: () => number | null;
   calculateSemesterWAM: (semesterId: string) => number | null;
+  deleteSemester: (semesterId: string) => void;
+  deleteSubject: (semesterId: string, subjectId: string) => void;
+  loadSampleData: () => void;
 }
 
 export const useWAMStore = create<WAMStore>()(
@@ -151,6 +177,20 @@ export const useWAMStore = create<WAMStore>()(
         }
         return totalCredits > 0 ? Math.round((totalWeighted / totalCredits) * 100) / 100 : null;
       },
+
+      deleteSemester: (semesterId) =>
+        set((s) => ({ semesters: s.semesters.filter((sem) => sem.id !== semesterId) })),
+
+      deleteSubject: (semesterId, subjectId) =>
+        set((s) => ({
+          semesters: s.semesters.map((sem) =>
+            sem.id === semesterId
+              ? { ...sem, subjects: sem.subjects.filter((sub) => sub.id !== subjectId) }
+              : sem
+          ),
+        })),
+
+      loadSampleData: () => set({ semesters: SAMPLE_SEMESTERS }),
 
       calculateSemesterWAM: (semesterId) => {
         const { semesters } = get();

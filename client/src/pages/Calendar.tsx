@@ -1,6 +1,7 @@
 // Design: Dark Brutalism + Neon Accent — Calendar page with ICS upload
 // Brand: #012E2B bg, #FFDC73 accent, Space Grotesk headers
 import { useState, useRef, useMemo } from "react";
+import { useCalendarStore } from "../stores/calendarStore";
 import { Upload, ChevronLeft, ChevronRight, X, CalendarDays, Clock, MapPin, Trash2, RefreshCw, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 import PageHeader from "../components/PageHeader";
@@ -78,7 +79,7 @@ export default function CalendarPage() {
       const text = await file.text();
       const parsed = parseICS(text);
       if (parsed.length === 0) { toast.error("No events found in ICS file"); return; }
-      addEvents({ events: parsed, replaceAll: true });
+      addEvents(parsed.map((ev, i) => ({ id: Date.now() + i, title: ev.title, start: ev.start, end: ev.end, allDay: ev.allDay, location: ev.location, description: ev.description, isRecurring: ev.isRecurring })));
     } catch { toast.error("Failed to parse ICS file"); }
     finally { setImporting(false); if (fileRef.current) fileRef.current.value = ""; }
   };
@@ -106,7 +107,7 @@ export default function CalendarPage() {
   const eventMap = useMemo(() => {
     const map: Record<string, typeof events> = {};
     for (const ev of events) {
-      const d = new Date(ev.startAt);
+      const d = new Date(ev.start);
       const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
       if (!map[key]) map[key] = [];
       map[key].push(ev);
@@ -133,8 +134,8 @@ export default function CalendarPage() {
   const upcomingEvents = useMemo(() => {
     const start = new Date(); start.setHours(0,0,0,0);
     const end = new Date(start); end.setDate(end.getDate() + 60);
-    return events.filter(ev => new Date(ev.startAt) >= start && new Date(ev.startAt) <= end)
-      .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+    return events.filter(ev => new Date(ev.start) >= start && new Date(ev.start) <= end)
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
   }, [events]);
 
   return (
@@ -247,7 +248,7 @@ export default function CalendarPage() {
                           <span className="w-1.5 h-1.5 rounded-full bg-[#FFDC73] mt-1.5 shrink-0" />
                           <div>
                             <p className="text-[#F8F8FF] text-xs font-semibold">{ev.title}</p>
-                            {!ev.allDay && <p className="text-[#8fa8a5] text-[10px]">{formatTime(new Date(ev.startAt))}</p>}
+                            {!ev.allDay && <p className="text-[#8fa8a5] text-[10px]">{formatTime(new Date(ev.start))}</p>}
                           </div>
                         </button>
                       ))}
@@ -280,8 +281,8 @@ export default function CalendarPage() {
                     <div className="flex items-start justify-between">
                       <button type="button" onClick={() => setSelectedEventId(ev.id)} className="flex-1 text-left">
                         <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{ev.title}</p>
-                        <p className="text-[#FFDC73] text-xs mt-0.5">{formatDate(new Date(ev.startAt))}</p>
-                        {!ev.allDay && <p className="text-[#8fa8a5] text-xs">{formatTime(new Date(ev.startAt))} – {formatTime(new Date(ev.endAt))}</p>}
+                        <p className="text-[#FFDC73] text-xs mt-0.5">{formatDate(new Date(ev.start))}</p>
+                        {!ev.allDay && <p className="text-[#8fa8a5] text-xs">{formatTime(new Date(ev.start))} – {formatTime(new Date(ev.end))}</p>}
                         {ev.location && <p className="text-[#8fa8a5] text-xs">{ev.location}</p>}
                       </button>
                       <button type="button" onClick={() => deleteEvent({ id: ev.id })} className="text-[#8fa8a5] p-1 active:text-red-400 ml-2">
@@ -310,7 +311,7 @@ export default function CalendarPage() {
                     <div className="flex items-start justify-between">
                       <button type="button" onClick={() => setSelectedEventId(ev.id)} className="flex-1 text-left">
                         <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{ev.title}</p>
-                        {!ev.allDay && <p className="text-[#8fa8a5] text-xs mt-0.5">{formatTime(new Date(ev.startAt))} – {formatTime(new Date(ev.endAt))}</p>}
+                        {!ev.allDay && <p className="text-[#8fa8a5] text-xs mt-0.5">{formatTime(new Date(ev.start))} – {formatTime(new Date(ev.end))}</p>}
                         {ev.location && <p className="text-[#8fa8a5] text-xs">{ev.location}</p>}
                       </button>
                       <button type="button" onClick={() => deleteEvent({ id: ev.id })} className="text-[#8fa8a5] p-1 active:text-red-400 ml-2">
@@ -349,12 +350,12 @@ export default function CalendarPage() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <CalendarDays size={14} className="text-[#FFDC73]" />
-                <span className="text-[#F8F8FF] text-sm">{formatDate(new Date(selectedEventDetail.startAt))}</span>
+                <span className="text-[#F8F8FF] text-sm">{formatDate(new Date(selectedEventDetail.start))}</span>
               </div>
               {!selectedEventDetail.allDay && (
                 <div className="flex items-center gap-2">
                   <Clock size={14} className="text-[#FFDC73]" />
-                  <span className="text-[#F8F8FF] text-sm">{formatTime(new Date(selectedEventDetail.startAt))} – {formatTime(new Date(selectedEventDetail.endAt))}</span>
+                  <span className="text-[#F8F8FF] text-sm">{formatTime(new Date(selectedEventDetail.start))} – {formatTime(new Date(selectedEventDetail.end))}</span>
                 </div>
               )}
               {selectedEventDetail.location && (

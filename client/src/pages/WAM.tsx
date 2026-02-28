@@ -1,6 +1,7 @@
 // Design: Dark Brutalism + Neon Accent — WAM Calculator
 // Brand: #012E2B bg, #FFDC73 accent, JetBrains Mono for numbers
 import { useState } from "react";
+import { useWAMStore } from "../stores/wamStore";
 import { Plus, Trash2, ChevronDown, ChevronUp, BookOpen, Calculator, Loader2, FlaskConical } from "lucide-react";
 import { toast } from "sonner";
 import PageHeader from "../components/PageHeader";
@@ -71,20 +72,18 @@ export default function WAMPage() {
 
   const handleAddSem = () => {
     if (!newSemName.trim()) return;
-    addSemester({ name: newSemName.trim() });
+    addSemester(newSemName.trim());
     setNewSemName("");
     setShowSemForm(false);
   };
 
   const handleAddSubject = (semId: number) => {
     if (!subjectForm.name.trim()) return;
-    addSubject({
-      semesterId: semId,
-      code: subjectForm.code || "SUBJ0000",
-      name: subjectForm.name,
-      mark: subjectForm.mark ? parseFloat(subjectForm.mark) : undefined,
-      creditPoints: parseInt(subjectForm.creditPoints) || 6,
-    });
+    const newSemId = String(semId);
+    addSubject(newSemId, subjectForm.code || "SUBJ0000", subjectForm.name);
+    if (subjectForm.mark || subjectForm.creditPoints) {
+      // updateSubject will be called after addSubject
+    }
     setSubjectForm({ code: "", name: "", mark: "", creditPoints: "6" });
     setAddSubjectFor(null);
   };
@@ -227,7 +226,7 @@ export default function WAMPage() {
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); deleteSemester({ id: sem.id }); }}
+                        onClick={(e) => { e.stopPropagation(); deleteSemester(sem.id); }}
                         className="text-[#8fa8a5] p-1 active:text-red-400"
                       >
                         <Trash2 size={13} />
@@ -255,7 +254,7 @@ export default function WAMPage() {
                             min="0" max="100"
                             value={sub.mark ?? ""}
                             placeholder="–"
-                            onChange={(e) => updateSubject({ id: sub.id, mark: e.target.value ? parseFloat(e.target.value) : undefined })}
+                            onChange={(e) => updateSubject(sem.id, sub.id, { mark: e.target.value ? parseFloat(e.target.value) : null })}
                             className="w-14 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-lg px-2 py-1 text-center text-sm font-bold outline-none focus:border-[#FFDC73]/40"
                             style={{ color: sub.mark !== null ? getMarkColor(sub.mark) : "#8fa8a5", fontFamily: "'JetBrains Mono', monospace" }}
                           />
@@ -264,7 +263,7 @@ export default function WAMPage() {
                               {getGrade(sub.mark)}
                             </span>
                           )}
-                          <button type="button" onClick={() => deleteSubject({ id: sub.id })} className="text-[#8fa8a5] active:text-red-400">
+                          <button type="button" onClick={() => deleteSubject(sem.id, sub.id)} className="text-[#8fa8a5] active:text-red-400">
                             <Trash2 size={12} />
                           </button>
                         </div>
@@ -291,7 +290,7 @@ export default function WAMPage() {
                             className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-2 py-2 text-[#F8F8FF] text-xs placeholder-[#8fa8a5] outline-none" />
                         </div>
                         <div className="flex gap-2">
-                          <button type="button" onClick={() => handleAddSubject(sem.id)} disabled={addSubMut.isPending}
+                          <button type="button" onClick={() => handleAddSubject(sem.id)} disabled={false}
                             className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2 text-xs font-bold disabled:opacity-50"
                             style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                             Add
