@@ -40,11 +40,12 @@ export default function GalleryPage() {
   };
 
   const handleUpload = () => {
-    if (!photoPreview) return;
-    const base64 = photoPreview.replace(/^data:[^;]+;base64,/, "");
-    const mimeMatch = photoPreview.match(/^data:([^;]+);/);
-    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-    (() => {})({ base64, caption: photoCaption || undefined, mimeType });
+    if (!photoPreview || !currentUserId) return;
+    addUserPhoto({ userId: currentUserId, src: photoPreview, caption: photoCaption });
+    setPhotoPreview(null);
+    setPhotoCaption("");
+    if (fileRef.current) fileRef.current.value = "";
+    toast.success("Photo uploaded!");
   };
 
   return (
@@ -227,7 +228,7 @@ export default function GalleryPage() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => (() => {})({ id: photo.id })}
+                          onClick={() => { removeUserPhoto(photo.id); toast.success("Photo deleted"); }}
                           className="text-[#8fa8a5] active:text-red-400"
                         >
                           <Trash2 size={12} />
@@ -239,8 +240,8 @@ export default function GalleryPage() {
                       {!photo.submitted ? (
                         <button
                           type="button"
-                          onClick={() => {}}
-                          disabled={false}
+          onClick={() => { markPhotoSubmitted(photo.id); toast.success("Submitted to gallery!"); }}
+          disabled={false}
                           className="mt-1.5 w-full flex items-center justify-center gap-1 bg-[#012E2B] border border-[rgba(255,220,115,0.2)] rounded-lg py-1.5 text-[#FFDC73] text-[10px] font-bold disabled:opacity-50"
                         >
                           <Globe size={10} /> Submit to Gallery
