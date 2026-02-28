@@ -2,34 +2,38 @@
 // Brand: #012E2B bg, #FFDC73 accent, Space Grotesk headers
 import { useState, useRef } from "react";
 import { Bell, LogOut, MapPin, Clock, ChevronRight, Plus, Trash2, Target, Camera, Upload, Globe, CheckCircle2, X, TrendingUp, BookOpen } from "lucide-react";
+import { useAppStore } from "../stores/appStore";
 import { useUserStore } from "../stores/userStore";
 import { useAdminStore } from "../stores/adminStore";
 import { useWAMStore } from "../stores/wamStore";
-import { useAppStore } from "../stores/appStore";
 import Card from "../components/Card";
 import PageHeader from "../components/PageHeader";
+import { toast } from "sonner";
 
 export default function HomePage() {
-  const { getCurrentUser, logoutUser, getGoals, addGoal, removeGoal, userPhotos, currentUserId, addUserPhoto, markPhotoSubmitted, removeUserPhoto } = useUserStore();
+  const { setActiveTab } = useAppStore();
+  const { getGoals, addGoal, removeGoal, userPhotos, currentUserId, addUserPhoto, markPhotoSubmitted, removeUserPhoto } = useUserStore();
   const { announcements, sessions, submitUserPhoto } = useAdminStore();
   const { calculateWAM, semesters } = useWAMStore();
-  const { setActiveTab, setAdminMode } = useAppStore();
-
-  const user = getCurrentUser();
   const goals = getGoals();
   const wam = calculateWAM();
   const myPhotos = userPhotos.filter((p) => p.userId === currentUserId);
 
   const [showGoalForm, setShowGoalForm] = useState(false);
   const [goalForm, setGoalForm] = useState({ semesterName: "", targetWAM: "", targetGrade: "", note: "" });
-  const [submittedIds, setSubmittedIds] = useState<Set<string>>(() => new Set<string>(myPhotos.filter((p) => p.submitted).map((p) => p.id)));
   const [photoCaption, setPhotoCaption] = useState("");
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const nextSession = sessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+  const nextSession = [...sessions].sort((a, b) => a.date.localeCompare(b.date))[0];
   const pinnedAnnouncements = announcements.filter((a) => a.pinned).slice(0, 2);
+
+  // Simple WAM calculation from DB data
+  const calculateWAM = () => {
+    // We'll show semester count as a proxy; full WAM calc is on WAM page
+    return semesters.length > 0 ? wamSemesters.length : null;
+  };
 
   const handleAddGoal = () => {
     if (!goalForm.semesterName || !goalForm.targetWAM) return;
@@ -47,7 +51,7 @@ export default function HomePage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert("Max 5MB"); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Max 5MB"); return; }
     const reader = new FileReader();
     reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
@@ -59,20 +63,16 @@ export default function HomePage() {
     setPhotoPreview(null);
     setPhotoCaption("");
     if (fileRef.current) fileRef.current.value = "";
+    toast.success("Photo uploaded!");
   };
 
+  const [submittedIds, setSubmittedIds] = useState<Set<string>>(() => new Set<string>(myPhotos.filter((p) => p.submitted).map((p) => p.id)));
   const handleSubmit = (photo: typeof myPhotos[0]) => {
     if (submittedIds.has(photo.id)) return;
     setSubmittedIds((prev) => { const next = new Set<string>(Array.from(prev)); next.add(photo.id); return next; });
-    const u = getCurrentUser();
-    submitUserPhoto({ userId: currentUserId!, username: u?.username || "", displayName: u?.displayName || "", src: photo.src, caption: photo.caption });
+    submitUserPhoto({ userId: currentUserId!, username: "", displayName: "", src: photo.src, caption: photo.caption });
     markPhotoSubmitted(photo.id);
-  };
-
-  const handleLogout = () => {
-    logoutUser();
-    setAdminMode(false);
-    window.location.reload();
+    toast.success("Submitted to gallery!");
   };
 
   const getWAMColor = (w: number) => w >= 80 ? "#4ade80" : w >= 70 ? "#FFDC73" : w >= 60 ? "#fb923c" : "#f87171";
@@ -80,17 +80,17 @@ export default function HomePage() {
   return (
     <div className="page-container bg-[#012E2B]">
       <PageHeader
-        title={`Hi, ${user?.displayName?.split(" ")[0] || "there"} 👋`}
+        title="Hi, there 👋"
         subtitle="Saturday Normal Library"
         accent
         right={
-          <button type="button" onClick={handleLogout} className="w-8 h-8 rounded-xl bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] flex items-center justify-center text-[#8fa8a5] active:scale-95">
+          <button type="button" onClick={() => toast.info("Login available on Manus version")} className="w-8 h-8 rounded-xl bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] flex items-center justify-center text-[#8fa8a5] active:scale-95">
             <LogOut size={15} />
           </button>
         }
       />
 
-      <div className="px-4 pt-2 pb-4 flex flex-col gap-4">
+      <div className="px-4 pt-6 pb-24 flex flex-col gap-5">
         {/* Announcements */}
         {pinnedAnnouncements.length > 0 && (
           <div>
@@ -133,7 +133,7 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="bg-[#FFDC73]/10 border border-[#FFDC73]/20 rounded-xl px-2 py-1 ml-3">
-                  <p className="text-[#FFDC73] text-xs font-bold mono">{nextSession.maxAttendees}</p>
+                  <p className="text-[#FFDC73] text-xs font-bold">{nextSession.maxAttendees}</p>
                   <p className="text-[#8fa8a5] text-[10px]">spots</p>
                 </div>
               </div>
@@ -153,17 +153,15 @@ export default function HomePage() {
             </button>
           </div>
           <Card>
-            {wam !== null ? (
+            {semesters.length > 0 ? (
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: `${getWAMColor(wam)}20`, border: `2px solid ${getWAMColor(wam)}40` }}>
-                  <span className="text-xl font-black mono" style={{ color: getWAMColor(wam) }}>{wam.toFixed(1)}</span>
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-[#FFDC73]/10 border border-[#FFDC73]/20">
+                  <span className="text-xl font-black" style={{ color: "#FFDC73", fontFamily: "'Space Grotesk', sans-serif" }}>{semesters.length}</span>
                 </div>
                 <div>
-                  <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Cumulative WAM</p>
-                  <p className="text-[#8fa8a5] text-xs">{semesters.length} semester{semesters.length !== 1 ? "s" : ""} tracked</p>
-                  <p className="text-xs mt-1 font-semibold" style={{ color: getWAMColor(wam) }}>
-                    {wam >= 80 ? "High Distinction" : wam >= 70 ? "Distinction" : wam >= 60 ? "Credit" : "Pass"}
-                  </p>
+                  <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Semesters Tracked</p>
+                  <p className="text-[#8fa8a5] text-xs">Go to WAM tab for full calculation</p>
+                  <button type="button" onClick={() => setActiveTab("wam")} className="text-[#FFDC73] text-xs font-semibold mt-0.5">View WAM →</button>
                 </div>
               </div>
             ) : (
@@ -195,52 +193,24 @@ export default function HomePage() {
           {showGoalForm && (
             <Card className="mb-2">
               <div className="flex flex-col gap-2">
-                <input
-                  type="text"
-                  placeholder="Semester (e.g. Sem 1 2025)"
-                  value={goalForm.semesterName}
-                  onChange={(e) => setGoalForm((f) => ({ ...f, semesterName: e.target.value }))}
-                  className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
-                />
+                <input type="text" placeholder="Semester (e.g. Sem 1 2025)" value={goalForm.semesterName} onChange={(e) => setGoalForm((f) => ({ ...f, semesterName: e.target.value }))} className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40" />
                 <div className="flex gap-2">
-                  <input
-                    type="number"
-                    placeholder="Target WAM"
-                    value={goalForm.targetWAM}
-                    onChange={(e) => setGoalForm((f) => ({ ...f, targetWAM: e.target.value }))}
-                    className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Grade (HD)"
-                    value={goalForm.targetGrade}
-                    onChange={(e) => setGoalForm((f) => ({ ...f, targetGrade: e.target.value }))}
-                    className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
-                  />
+                  <input type="number" placeholder="Target WAM" value={goalForm.targetWAM} onChange={(e) => setGoalForm((f) => ({ ...f, targetWAM: e.target.value }))} className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40" />
+                  <input type="text" placeholder="Grade (HD)" value={goalForm.targetGrade} onChange={(e) => setGoalForm((f) => ({ ...f, targetGrade: e.target.value }))} className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40" />
                 </div>
-                <input
-                  type="text"
-                  placeholder="Note (optional)"
-                  value={goalForm.note}
-                  onChange={(e) => setGoalForm((f) => ({ ...f, note: e.target.value }))}
-                  className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
-                />
+                <input type="text" placeholder="Note (optional)" value={goalForm.note} onChange={(e) => setGoalForm((f) => ({ ...f, note: e.target.value }))} className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40" />
                 <div className="flex gap-2">
-                  <button type="button" onClick={handleAddGoal} className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                    Add Goal
+                  <button type="button" onClick={handleAddGoal}  className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold disabled:opacity-50" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                    "Add Goal"
                   </button>
-                  <button type="button" onClick={() => setShowGoalForm(false)} className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2.5 text-sm">
-                    Cancel
-                  </button>
+                  <button type="button" onClick={() => setShowGoalForm(false)} className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2.5 text-sm">Cancel</button>
                 </div>
               </div>
             </Card>
           )}
 
           {goals.length === 0 ? (
-            <Card>
-              <p className="text-[#8fa8a5] text-sm text-center py-2">No goals yet. Add your first study goal!</p>
-            </Card>
+            <Card><p className="text-[#8fa8a5] text-sm text-center py-2">No goals yet. Add your first study goal!</p></Card>
           ) : (
             <div className="flex flex-col gap-2">
               {goals.map((g) => (
@@ -249,7 +219,7 @@ export default function HomePage() {
                     <div className="flex-1">
                       <p className="text-[#F8F8FF] text-sm font-semibold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{g.semesterName}</p>
                       <div className="flex items-center gap-3 mt-1">
-                        <span className="text-[#FFDC73] text-xs font-bold mono">WAM {g.targetWAM}</span>
+                        <span className="text-[#FFDC73] text-xs font-bold">WAM {g.targetWAM}</span>
                         {g.targetGrade && <span className="text-[#8fa8a5] text-xs">{g.targetGrade}</span>}
                       </div>
                       {g.note && <p className="text-[#8fa8a5] text-xs mt-1 italic">{g.note}</p>}
@@ -283,15 +253,9 @@ export default function HomePage() {
                     <X size={12} />
                   </button>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Add a caption..."
-                  value={photoCaption}
-                  onChange={(e) => setPhotoCaption(e.target.value)}
-                  className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
-                />
-                <button type="button" onClick={handleUpload} className="w-full bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  <Upload size={14} /> Upload Photo
+                <input type="text" placeholder="Add a caption..." value={photoCaption} onChange={(e) => setPhotoCaption(e.target.value)} className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none" />
+                <button type="button" onClick={handleUpload}  className="w-full bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                  <Upload size={14} /> "Upload Photo"
                 </button>
               </div>
             ) : (
@@ -324,11 +288,11 @@ export default function HomePage() {
                     </div>
                     {photo.caption && <p className="text-[#8fa8a5] text-[10px] truncate">{photo.caption}</p>}
                     {!submittedIds.has(photo.id) ? (
-                      <button type="button" onClick={() => handleSubmit(photo)} className="mt-1.5 w-full flex items-center justify-center gap-1 bg-[#012E2B] border border-[rgba(255,220,115,0.2)] rounded-lg py-1.5 text-[#FFDC73] text-[10px] font-bold">
+                      <button type="button" onClick={() => handleSubmit(photo)}  className="mt-1.5 w-full flex items-center justify-center gap-1 bg-[#012E2B] border border-[rgba(255,220,115,0.2)] rounded-lg py-1.5 text-[#FFDC73] text-[10px] font-bold disabled:opacity-50">
                         <Globe size={10} /> Submit to Gallery
                       </button>
                     ) : (
-                      <div className="mt-1.5 w-full flex items-center justify-center gap-1 bg-green-500 rounded-lg py-1.5 text-white text-[10px] font-bold">
+                      <div className="mt-1.5 w-full flex items-center justify-center gap-1 bg-green-500 rounded-lg py-1.5 text-white text-[10px] font-bold cursor-not-allowed">
                         <CheckCircle2 size={10} /> Submitted!
                       </div>
                     )}
