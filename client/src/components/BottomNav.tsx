@@ -2,22 +2,23 @@
 // Brand: #012E2B bg, #FFDC73 active, Space Grotesk labels
 import { Home, CalendarDays, Calculator, Images, ShieldCheck } from "lucide-react";
 import { useAppStore, type TabId } from "../stores/appStore";
-import { useUserStore } from "../stores/userStore";
+import { useAuth } from "../_core/hooks/useAuth";
 
-const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+const TABS: { id: TabId; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "wam", label: "WAM", icon: Calculator },
   { id: "gallery", label: "Gallery", icon: Images },
-  { id: "admin", label: "Admin", icon: ShieldCheck },
+  { id: "admin", label: "Admin", icon: ShieldCheck, adminOnly: true },
 ];
 
 export default function BottomNav() {
-  const { activeTab, setActiveTab, isAdminMode } = useAppStore();
-  const { currentUserId } = useUserStore();
+  const { activeTab, setActiveTab } = useAppStore();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
-  // Hide admin tab for non-admin users
-  const visibleTabs = TABS.filter((t) => t.id !== "admin" || isAdminMode);
+  // Show admin tab only for admin users
+  const visibleTabs = TABS.filter((t) => !t.adminOnly || isAdmin);
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 max-w-[480px] mx-auto">

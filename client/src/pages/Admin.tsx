@@ -1,123 +1,153 @@
 // Design: Dark Brutalism + Neon Accent — Admin Panel
-// Brand: #012E2B bg, #FFDC73 accent, Space Grotesk headers
+// Brand: #012E2B bg, #FFDC73 accent
 import { useState, useRef } from "react";
-import { Plus, Trash2, Edit3, Check, X, Pin, Eye, EyeOff, Upload, Image, Bell, CalendarDays, CheckCircle2, XCircle, Clock, ShieldCheck, LogOut } from "lucide-react";
-import { useAdminStore } from "../stores/adminStore";
-import { useAppStore } from "../stores/appStore";
+import {
+  Bell, Calendar, Users, Image, Check, X, Trash2,
+  Plus, Loader2, Upload, Camera, Eye, EyeOff, Pin, PinOff, FlaskConical, Link
+} from "lucide-react";
+import { trpc } from "../lib/trpc";
+import { toast } from "sonner";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 
 type AdminTab = "announcements" | "sessions" | "gallery" | "submissions";
 
 export default function AdminPage() {
-  const {
-    announcements, addAnnouncement, updateAnnouncement, deleteAnnouncement,
-    sessions, addSession, updateSession, deleteSession,
-    galleryPhotos, addGalleryPhoto, deleteGalleryPhoto, togglePhotoVisibility, updatePhotoCaption,
-    userSubmittedPhotos, reviewUserPhoto,
-  } = useAdminStore();
-  const { setAdminMode, setActiveTab } = useAppStore();
+  const utils = trpc.useUtils();
+  const [activeTab, setActiveTab] = useState<AdminTab>("announcements");
 
-  const [activeTab, setTab] = useState<AdminTab>("announcements");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Record<string, string>>({});
-  const [showAddAnn, setShowAddAnn] = useState(false);
+  // ─── Announcements ─────────────────────────────────────────────────────────
+  const { data: announcements = [], isLoading: annLoading } = trpc.announcements.list.useQuery();
+  const createAnnMut = trpc.announcements.create.useMutation({
+    onSuccess: () => { utils.announcements.list.invalidate(); toast.success("Announcement created!"); setAnnForm({ title: "", content: "", pinned: false }); setShowAnnForm(false); },
+    onError: () => toast.error("Failed to create announcement"),
+  });
+  const deleteAnnMut = trpc.announcements.delete.useMutation({
+    onSuccess: () => { utils.announcements.list.invalidate(); toast.success("Deleted."); },
+  });
+  const updateAnnMut = trpc.announcements.update.useMutation({
+    onSuccess: () => utils.announcements.list.invalidate(),
+  });
+  const [showAnnForm, setShowAnnForm] = useState(false);
   const [annForm, setAnnForm] = useState({ title: "", content: "", pinned: false });
-  const [showAddSession, setShowAddSession] = useState(false);
-  const [sessionForm, setSessionForm] = useState({ date: "", startTime: "13:00", endTime: "17:00", location: "oSpace Brunswick", topic: "", maxAttendees: "30", notes: "" });
-  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
-  const [uploadCaption, setUploadCaption] = useState("");
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  const pendingCount = userSubmittedPhotos.filter((p) => p.status === "pending").length;
+  // ─── Sessions ──────────────────────────────────────────────────────────────
+  const { data: sessions = [], isLoading: sessLoading } = trpc.sessions.list.useQuery();
+  const createSessMut = trpc.sessions.create.useMutation({
+    onSuccess: () => { utils.sessions.list.invalidate(); toast.success("Session created!"); setSessForm({ date: "", startTime: "", endTime: "", location: "", topic: "", maxAttendees: "50", notes: "" }); setShowSessForm(false); },
+    onError: () => toast.error("Failed to create session"),
+  });
+  const deleteSessMut = trpc.sessions.delete.useMutation({
+    onSuccess: () => { utils.sessions.list.invalidate(); toast.success("Deleted."); },
+  });
+  const [showSessForm, setShowSessForm] = useState(false);
+  const [sessForm, setSessForm] = useState({ date: "", startTime: "", endTime: "", location: "", topic: "", maxAttendees: "50", notes: "" });
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ─── Gallery ───────────────────────────────────────────────────────────────
+  const { data: allGallery = [], isLoading: galLoading } = trpc.gallery.listAll.useQuery();
+  const uploadGalMut = trpc.gallery.upload.useMutation({
+    onSuccess: () => { utils.gallery.listAll.invalidate(); utils.gallery.list.invalidate(); toast.success("Photo uploaded!"); setGalPreview(null); setGalCaption(""); if (galFileRef.current) galFileRef.current.value = ""; },
+    onError: () => toast.error("Upload failed"),
+  });
+  const toggleVisMut = trpc.gallery.toggleVisibility.useMutation({
+    onSuccess: () => { utils.gallery.listAll.invalidate(); utils.gallery.list.invalidate(); },
+  });
+  const deleteGalMut = trpc.gallery.delete.useMutation({
+    onSuccess: () => { utils.gallery.listAll.invalidate(); utils.gallery.list.invalidate(); toast.success("Deleted."); },
+  });
+  const seedDefaultMut = trpc.gallery.seedDefault.useMutation({
+    onSuccess: (data) => { utils.gallery.listAll.invalidate(); utils.gallery.list.invalidate(); toast.success(`Added ${data.count} SNL photos!`); },
+    onError: () => toast.error("Failed to seed photos"),
+  });
+  const addByUrlMut = trpc.gallery.addByUrl.useMutation({
+    onSuccess: () => { utils.gallery.listAll.invalidate(); utils.gallery.list.invalidate(); toast.success("Photo added!"); setUrlInput(""); setUrlCaption(""); setShowUrlForm(false); },
+    onError: () => toast.error("Failed to add photo by URL"),
+  });
+  const [galPreview, setGalPreview] = useState<string | null>(null);
+  const [galCaption, setGalCaption] = useState("");
+  const galFileRef = useRef<HTMLInputElement>(null);
+  const [showUrlForm, setShowUrlForm] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [urlCaption, setUrlCaption] = useState("");
+
+  // ─── User Submissions ──────────────────────────────────────────────────────
+  const { data: allUserPhotos = [], isLoading: subLoading } = trpc.userPhotos.allPhotos.useQuery();
+  const updateStatusMut = trpc.userPhotos.updateStatus.useMutation({
+    onSuccess: () => { utils.userPhotos.allPhotos.invalidate(); utils.gallery.list.invalidate(); toast.success("Status updated!"); },
+    onError: () => toast.error("Failed to update status"),
+  });
+
+  const pendingPhotos = allUserPhotos.filter((p) => p.submitted && p.status === "pending");
+
+  const handleGalFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error("Max 5MB"); return; }
     const reader = new FileReader();
-    reader.onload = (ev) => setUploadPreview(ev.target?.result as string);
+    reader.onload = (ev) => setGalPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
   };
 
-  const handleAddPhoto = () => {
-    if (!uploadPreview) return;
-    addGalleryPhoto({ src: uploadPreview, caption: uploadCaption, visible: true, source: "admin" });
-    setUploadPreview(null);
-    setUploadCaption("");
-    if (fileRef.current) fileRef.current.value = "";
+  const handleGalUpload = () => {
+    if (!galPreview) return;
+    const base64 = galPreview.replace(/^data:[^;]+;base64,/, "");
+    const mimeMatch = galPreview.match(/^data:([^;]+);/);
+    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    uploadGalMut.mutate({ base64, caption: galCaption || undefined, mimeType });
   };
 
-  const handleLogout = () => {
-    setAdminMode(false);
-    setActiveTab("home");
-  };
-
-  const TABS: { id: AdminTab; label: string; badge?: number }[] = [
-    { id: "announcements", label: "Notices" },
-    { id: "sessions", label: "Sessions" },
-    { id: "gallery", label: "Gallery" },
-    { id: "submissions", label: "Submissions", badge: pendingCount },
+  const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { key: "announcements", label: "Announce", icon: <Bell size={14} /> },
+    { key: "sessions", label: "Sessions", icon: <Calendar size={14} /> },
+    { key: "gallery", label: "Gallery", icon: <Image size={14} /> },
+    { key: "submissions", label: "Submissions", icon: <Users size={14} />, badge: pendingPhotos.length },
   ];
 
   return (
     <div className="page-container bg-[#012E2B]">
-      <PageHeader
-        title="Admin Panel"
-        subtitle="SNL Study Management"
-        accent
-        right={
-          <button type="button" onClick={handleLogout} className="flex items-center gap-1.5 bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] text-[#8fa8a5] rounded-xl px-3 py-1.5 text-xs font-semibold">
-            <LogOut size={12} /> Exit
-          </button>
-        }
-      />
+      <PageHeader title="Admin Panel" subtitle="Manage SNL content" accent />
 
-      {/* Admin badge */}
-      <div className="px-4 pt-2">
-        <div className="flex items-center gap-2 bg-[#FFDC73]/10 border border-[#FFDC73]/20 rounded-xl px-3 py-2 mb-3">
-          <ShieldCheck size={14} className="text-[#FFDC73]" />
-          <span className="text-[#FFDC73] text-xs font-semibold">Administrator Mode</span>
-        </div>
-      </div>
-
-      {/* Tab Bar */}
-      <div className="px-4 mb-4">
-        <div className="flex bg-[#0a3d39] rounded-xl p-1 gap-0.5">
-          {TABS.map((t) => (
+      <div className="px-4 pt-2 pb-4 flex flex-col gap-4">
+        {/* Tab Bar */}
+        <div className="flex gap-1 bg-[#0a3d39] rounded-2xl p-1">
+          {tabs.map((tab) => (
             <button
-              key={t.id}
+              key={tab.key}
               type="button"
-              onClick={() => setTab(t.id)}
-              className={`flex-1 py-1.5 rounded-lg text-[10px] font-semibold transition-all relative ${
-                activeTab === t.id ? "bg-[#FFDC73] text-[#012E2B]" : "text-[#8fa8a5]"
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-bold transition-colors relative ${
+                activeTab === tab.key ? "bg-[#FFDC73] text-[#012E2B]" : "text-[#8fa8a5]"
               }`}
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              {t.label}
-              {t.badge !== undefined && t.badge > 0 && (
+              {tab.icon}
+              <span className="hidden sm:inline">{tab.label}</span>
+              {tab.badge != null && tab.badge > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center font-bold">
-                  {t.badge}
+                  {tab.badge}
                 </span>
               )}
             </button>
           ))}
         </div>
-      </div>
 
-      <div className="px-4 pb-4 flex flex-col gap-3">
-        {/* ── Announcements ── */}
+        {/* ─── Announcements ─── */}
         {activeTab === "announcements" && (
           <>
-            <button
-              type="button"
-              onClick={() => setShowAddAnn(!showAddAnn)}
-              className="flex items-center gap-2 bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2.5 text-sm font-bold self-start"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            >
-              <Plus size={14} /> New Announcement
-            </button>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[#F8F8FF] text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                Announcements
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowAnnForm(!showAnnForm)}
+                className="flex items-center gap-1.5 bg-[#FFDC73]/10 border border-[#FFDC73]/20 text-[#FFDC73] rounded-xl px-3 py-1.5 text-xs font-bold"
+              >
+                <Plus size={12} /> New
+              </button>
+            </div>
 
-            {showAddAnn && (
+            {showAnnForm && (
               <Card>
                 <div className="flex flex-col gap-2">
                   <input
@@ -146,18 +176,18 @@ export default function AdminPage() {
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        if (!annForm.title) return;
-                        addAnnouncement({ title: annForm.title, content: annForm.content, pinned: annForm.pinned });
-                        setAnnForm({ title: "", content: "", pinned: false });
-                        setShowAddAnn(false);
-                      }}
-                      className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold"
+                      onClick={() => createAnnMut.mutate(annForm)}
+                      disabled={createAnnMut.isPending || !annForm.title || !annForm.content}
+                      className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold disabled:opacity-50"
                       style={{ fontFamily: "'Space Grotesk', sans-serif" }}
                     >
-                      Post
+                      {createAnnMut.isPending ? <Loader2 size={14} className="animate-spin mx-auto" /> : "Post"}
                     </button>
-                    <button type="button" onClick={() => setShowAddAnn(false)} className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2.5 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => setShowAnnForm(false)}
+                      className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl text-sm"
+                    >
                       Cancel
                     </button>
                   </div>
@@ -165,189 +195,328 @@ export default function AdminPage() {
               </Card>
             )}
 
-            {announcements.map((a) => (
-              <Card key={a.id} className={a.pinned ? "border-l-2 border-l-[#FFDC73]" : ""}>
-                {editingId === a.id ? (
-                  <div className="flex flex-col gap-2">
-                    <input
-                      type="text"
-                      value={editForm.title ?? a.title}
-                      onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))}
-                      className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm outline-none"
-                    />
-                    <textarea
-                      value={editForm.content ?? a.content}
-                      onChange={(e) => setEditForm((f) => ({ ...f, content: e.target.value }))}
-                      rows={3}
-                      className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm outline-none resize-none"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateAnnouncement(a.id, { title: editForm.title ?? a.title, content: editForm.content ?? a.content });
-                          setEditingId(null);
-                        }}
-                        className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2 text-sm font-bold"
-                      >
-                        Save
-                      </button>
-                      <button type="button" onClick={() => setEditingId(null)} className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2 text-sm">
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        {a.pinned && <Pin size={11} className="text-[#FFDC73] shrink-0" />}
-                        <p className="text-[#F8F8FF] text-sm font-semibold truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{a.title}</p>
+            {annLoading ? (
+              <div className="flex justify-center py-4"><Loader2 size={24} className="text-[#FFDC73] animate-spin" /></div>
+            ) : announcements.length === 0 ? (
+              <Card><p className="text-[#8fa8a5] text-sm text-center py-2">No announcements yet.</p></Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {announcements.map((ann) => (
+                  <Card key={ann.id} className={ann.pinned ? "border-l-2 border-l-[#FFDC73]" : ""}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          {ann.pinned && <span className="text-[#FFDC73] text-[10px] font-bold">📌 PINNED</span>}
+                          <p className="text-[#F8F8FF] text-sm font-semibold truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                            {ann.title}
+                          </p>
+                        </div>
+                        <p className="text-[#8fa8a5] text-xs leading-relaxed line-clamp-2">{ann.content}</p>
                       </div>
-                      <p className="text-[#8fa8a5] text-xs leading-relaxed">{a.content}</p>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => updateAnnMut.mutate({ id: ann.id, pinned: !ann.pinned })}
+                          className="text-[#8fa8a5] p-1 active:text-[#FFDC73]"
+                        >
+                          {ann.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteAnnMut.mutate({ id: ann.id })}
+                          className="text-[#8fa8a5] p-1 active:text-red-400"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button type="button" onClick={() => { setEditingId(a.id); setEditForm({ title: a.title, content: a.content }); }} className="text-[#8fa8a5] p-1">
-                        <Edit3 size={13} />
-                      </button>
-                      <button type="button" onClick={() => updateAnnouncement(a.id, { pinned: !a.pinned })} className={`p-1 ${a.pinned ? "text-[#FFDC73]" : "text-[#8fa8a5]"}`}>
-                        <Pin size={13} />
-                      </button>
-                      <button type="button" onClick={() => deleteAnnouncement(a.id)} className="text-[#8fa8a5] p-1 active:text-red-400">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            ))}
+                  </Card>
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        {/* ── Sessions ── */}
+        {/* ─── Sessions ─── */}
         {activeTab === "sessions" && (
           <>
-            <button
-              type="button"
-              onClick={() => setShowAddSession(!showAddSession)}
-              className="flex items-center gap-2 bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2.5 text-sm font-bold self-start"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            >
-              <Plus size={14} /> New Session
-            </button>
+            <div className="flex items-center justify-between">
+              <h2 className="text-[#F8F8FF] text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                Study Sessions
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowSessForm(!showSessForm)}
+                className="flex items-center gap-1.5 bg-[#FFDC73]/10 border border-[#FFDC73]/20 text-[#FFDC73] rounded-xl px-3 py-1.5 text-xs font-bold"
+              >
+                <Plus size={12} /> New
+              </button>
+            </div>
 
-            {showAddSession && (
+            {showSessForm && (
               <Card>
                 <div className="flex flex-col gap-2">
-                  <input type="date" value={sessionForm.date} onChange={(e) => setSessionForm((f) => ({ ...f, date: e.target.value }))}
-                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm outline-none focus:border-[#FFDC73]/40" />
+                  <input
+                    type="text"
+                    placeholder="Topic"
+                    value={sessForm.topic}
+                    onChange={(e) => setSessForm((f) => ({ ...f, topic: e.target.value }))}
+                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
+                  />
+                  <input
+                    type="date"
+                    value={sessForm.date}
+                    onChange={(e) => setSessForm((f) => ({ ...f, date: e.target.value }))}
+                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm outline-none"
+                  />
                   <div className="flex gap-2">
-                    <input type="time" value={sessionForm.startTime} onChange={(e) => setSessionForm((f) => ({ ...f, startTime: e.target.value }))}
-                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm outline-none" />
-                    <input type="time" value={sessionForm.endTime} onChange={(e) => setSessionForm((f) => ({ ...f, endTime: e.target.value }))}
-                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm outline-none" />
+                    <input
+                      type="time"
+                      value={sessForm.startTime}
+                      onChange={(e) => setSessForm((f) => ({ ...f, startTime: e.target.value }))}
+                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={sessForm.endTime}
+                      onChange={(e) => setSessForm((f) => ({ ...f, endTime: e.target.value }))}
+                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm outline-none"
+                    />
                   </div>
-                  <input type="text" placeholder="Location" value={sessionForm.location} onChange={(e) => setSessionForm((f) => ({ ...f, location: e.target.value }))}
-                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none" />
-                  <input type="text" placeholder="Topic" value={sessionForm.topic} onChange={(e) => setSessionForm((f) => ({ ...f, topic: e.target.value }))}
-                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none" />
+                  <input
+                    type="text"
+                    placeholder="Location"
+                    value={sessForm.location}
+                    onChange={(e) => setSessForm((f) => ({ ...f, location: e.target.value }))}
+                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
+                  />
                   <div className="flex gap-2">
-                    <input type="number" placeholder="Max attendees" value={sessionForm.maxAttendees} onChange={(e) => setSessionForm((f) => ({ ...f, maxAttendees: e.target.value }))}
-                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none" />
+                    <input
+                      type="number"
+                      placeholder="Max attendees"
+                      value={sessForm.maxAttendees}
+                      onChange={(e) => setSessForm((f) => ({ ...f, maxAttendees: e.target.value }))}
+                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Notes (optional)"
+                      value={sessForm.notes}
+                      onChange={(e) => setSessForm((f) => ({ ...f, notes: e.target.value }))}
+                      className="flex-1 bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
+                    />
                   </div>
-                  <textarea placeholder="Notes" value={sessionForm.notes} onChange={(e) => setSessionForm((f) => ({ ...f, notes: e.target.value }))} rows={2}
-                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2.5 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none resize-none" />
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => {
-                      if (!sessionForm.date) return;
-                      addSession({ date: sessionForm.date, startTime: sessionForm.startTime, endTime: sessionForm.endTime, location: sessionForm.location, topic: sessionForm.topic, maxAttendees: parseInt(sessionForm.maxAttendees) || 30, notes: sessionForm.notes });
-                      setSessionForm({ date: "", startTime: "13:00", endTime: "17:00", location: "oSpace Brunswick", topic: "", maxAttendees: "30", notes: "" });
-                      setShowAddSession(false);
-                    }} className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                      Add Session
+                    <button
+                      type="button"
+                      onClick={() => createSessMut.mutate({
+                        topic: sessForm.topic,
+                        date: sessForm.date,
+                        startTime: sessForm.startTime,
+                        endTime: sessForm.endTime,
+                        location: sessForm.location,
+                        maxAttendees: parseInt(sessForm.maxAttendees) || 50,
+                        notes: sessForm.notes || undefined,
+                      })}
+                      disabled={createSessMut.isPending || !sessForm.topic || !sessForm.date}
+                      className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold disabled:opacity-50"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      {createSessMut.isPending ? <Loader2 size={14} className="animate-spin mx-auto" /> : "Create"}
                     </button>
-                    <button type="button" onClick={() => setShowAddSession(false)} className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2.5 text-sm">Cancel</button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSessForm(false)}
+                      className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl text-sm"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               </Card>
             )}
 
-            {sessions.map((s) => (
-              <Card key={s.id}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <p className="text-[#FFDC73] text-xs font-bold uppercase tracking-wide">{s.topic || "Study Session"}</p>
-                    <p className="text-[#F8F8FF] text-sm font-semibold mt-0.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{s.date}</p>
-                    <p className="text-[#8fa8a5] text-xs">{s.startTime} – {s.endTime} · {s.location}</p>
-                    {s.notes && <p className="text-[#8fa8a5] text-xs mt-1 italic">{s.notes}</p>}
-                    <p className="text-[#8fa8a5] text-xs mt-0.5">Max: {s.maxAttendees} attendees</p>
-                  </div>
-                  <button type="button" onClick={() => deleteSession(s.id)} className="text-[#8fa8a5] p-1 active:text-red-400">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </Card>
-            ))}
+            {sessLoading ? (
+              <div className="flex justify-center py-4"><Loader2 size={24} className="text-[#FFDC73] animate-spin" /></div>
+            ) : sessions.length === 0 ? (
+              <Card><p className="text-[#8fa8a5] text-sm text-center py-2">No sessions yet.</p></Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {sessions.map((sess) => (
+                  <Card key={sess.id}>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-[#FFDC73] text-xs font-bold uppercase tracking-wide mb-1">{sess.topic}</p>
+                        <p className="text-[#F8F8FF] text-sm">{sess.date} · {sess.startTime}–{sess.endTime}</p>
+                        <p className="text-[#8fa8a5] text-xs mt-0.5">{sess.location} · {sess.maxAttendees} spots</p>
+                        {sess.notes && <p className="text-[#8fa8a5] text-xs mt-1 italic">{sess.notes}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteSessMut.mutate({ id: sess.id })}
+                        className="text-[#8fa8a5] p-1 active:text-red-400"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        {/* ── Gallery ── */}
+        {/* ─── Gallery ─── */}
         {activeTab === "gallery" && (
           <>
-            <input ref={fileRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="flex items-center gap-2 bg-[#FFDC73] text-[#012E2B] rounded-xl px-4 py-2.5 text-sm font-bold self-start"
-              style={{ fontFamily: "'Space Grotesk', sans-serif" }}
-            >
-              <Upload size={14} /> Upload Photo
-            </button>
-
-            {uploadPreview && (
-              <Card>
-                <div className="relative w-full aspect-video rounded-xl overflow-hidden mb-2">
-                  <img src={uploadPreview} alt="preview" className="w-full h-full object-cover" />
-                  <button type="button" onClick={() => setUploadPreview(null)} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white">
-                    <X size={12} />
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Caption (optional)"
-                  value={uploadCaption}
-                  onChange={(e) => setUploadCaption(e.target.value)}
-                  className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none mb-2"
-                />
-                <button type="button" onClick={handleAddPhoto} className="w-full bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                  Add to Gallery
+            <div className="flex items-center justify-between">
+              <h2 className="text-[#F8F8FF] text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                Gallery ({allGallery.length})
+              </h2>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (allGallery.length > 0) {
+                      if (!confirm("This will add 37 SNL photos to the gallery. Continue?")) return;
+                    }
+                    seedDefaultMut.mutate();
+                  }}
+                  disabled={seedDefaultMut.isPending}
+                  className="flex items-center gap-1 bg-[#0a3d39] border border-[rgba(255,220,115,0.2)] text-[#FFDC73] rounded-xl px-2.5 py-1.5 text-xs font-bold disabled:opacity-50"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  <FlaskConical size={11} />
+                  {seedDefaultMut.isPending ? "..." : "SNL Photos"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowUrlForm(!showUrlForm)}
+                  className="flex items-center gap-1 bg-[#0a3d39] border border-[rgba(255,220,115,0.2)] text-[#FFDC73] rounded-xl px-2.5 py-1.5 text-xs font-bold"
+                  style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                >
+                  <Link size={11} /> URL
+                </button>
+              </div>
+            </div>
+
+            {/* URL Add Form */}
+            {showUrlForm && (
+              <Card>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="url"
+                    placeholder="Image URL (https://...)"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none focus:border-[#FFDC73]/40"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Caption (optional)"
+                    value={urlCaption}
+                    onChange={(e) => setUrlCaption(e.target.value)}
+                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => addByUrlMut.mutate({ url: urlInput, caption: urlCaption || undefined })}
+                      disabled={addByUrlMut.isPending || !urlInput}
+                      className="flex-1 bg-[#FFDC73] text-[#012E2B] rounded-xl py-2 text-xs font-bold disabled:opacity-50"
+                      style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                    >
+                      {addByUrlMut.isPending ? "Adding..." : "Add Photo"}
+                    </button>
+                    <button type="button" onClick={() => setShowUrlForm(false)}
+                      className="px-4 bg-[#0d4a45] text-[#8fa8a5] rounded-xl py-2 text-xs">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               </Card>
             )}
 
-            {galleryPhotos.length === 0 ? (
-              <Card>
-                <div className="flex flex-col items-center gap-2 py-4">
-                  <Image size={28} className="text-[#8fa8a5]" />
-                  <p className="text-[#8fa8a5] text-sm">No photos uploaded yet.</p>
+            {/* Upload */}
+            <Card>
+              <input ref={galFileRef} type="file" accept="image/*" onChange={handleGalFileChange} className="hidden" />
+              {galPreview ? (
+                <div className="flex flex-col gap-2">
+                  <div className="relative w-full aspect-video rounded-xl overflow-hidden">
+                    <img src={galPreview} alt="preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => setGalPreview(null)}
+                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-black/60 flex items-center justify-center text-white"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Caption (optional)"
+                    value={galCaption}
+                    onChange={(e) => setGalCaption(e.target.value)}
+                    className="w-full bg-[#012E2B] border border-[rgba(255,220,115,0.12)] rounded-xl px-3 py-2 text-[#F8F8FF] text-sm placeholder-[#8fa8a5] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGalUpload}
+                    disabled={uploadGalMut.isPending}
+                    className="w-full bg-[#FFDC73] text-[#012E2B] rounded-xl py-2.5 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50"
+                    style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                  >
+                    {uploadGalMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <><Upload size={14} /> Upload to Gallery</>}
+                  </button>
                 </div>
-              </Card>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => galFileRef.current?.click()}
+                  className="w-full border-2 border-dashed border-[rgba(255,220,115,0.2)] rounded-xl py-5 flex flex-col items-center gap-2 text-[#8fa8a5] active:border-[#FFDC73]/40"
+                >
+                  <Camera size={20} />
+                  <span className="text-sm">Upload admin photo</span>
+                </button>
+              )}
+            </Card>
+
+            {galLoading ? (
+              <div className="flex justify-center py-4"><Loader2 size={24} className="text-[#FFDC73] animate-spin" /></div>
+            ) : allGallery.length === 0 ? (
+              <Card><p className="text-[#8fa8a5] text-sm text-center py-2">No gallery photos yet.</p></Card>
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                {galleryPhotos.map((p) => (
-                  <div key={p.id} className="bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] rounded-2xl overflow-hidden">
+                {allGallery.map((photo) => (
+                  <div
+                    key={photo.id}
+                    className={`bg-[#0a3d39] border rounded-2xl overflow-hidden ${
+                      photo.visible ? "border-[rgba(255,220,115,0.12)]" : "border-red-500/20 opacity-60"
+                    }`}
+                  >
                     <div className="aspect-square overflow-hidden">
-                      <img src={p.src} alt={p.caption} className="w-full h-full object-cover" />
+                      <img src={photo.src} alt={photo.caption ?? "gallery"} className="w-full h-full object-cover" />
                     </div>
-                    <div className="p-2">
-                      <p className="text-[#8fa8a5] text-[10px] truncate mb-1">{p.caption || "No caption"}</p>
+                    <div className="p-2 flex items-center justify-between">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        photo.visible ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
+                      }`}>
+                        {photo.visible ? "Visible" : "Hidden"}
+                      </span>
                       <div className="flex items-center gap-1">
-                        <button type="button" onClick={() => togglePhotoVisibility(p.id)} className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1 text-[10px] font-semibold ${p.visible ? "bg-green-500/20 text-green-400" : "bg-[#0d4a45] text-[#8fa8a5]"}`}>
-                          {p.visible ? <><Eye size={10} /> Visible</> : <><EyeOff size={10} /> Hidden</>}
+                        <button
+                          type="button"
+                          onClick={() => toggleVisMut.mutate({ id: photo.id, visible: !photo.visible })}
+                          className="text-[#8fa8a5] active:text-[#FFDC73]"
+                        >
+                          {photo.visible ? <EyeOff size={12} /> : <Eye size={12} />}
                         </button>
-                        <button type="button" onClick={() => deleteGalleryPhoto(p.id)} className="w-7 h-7 rounded-lg bg-red-500/10 flex items-center justify-center text-red-400">
-                          <Trash2 size={11} />
+                        <button
+                          type="button"
+                          onClick={() => deleteGalMut.mutate({ id: photo.id })}
+                          className="text-[#8fa8a5] active:text-red-400"
+                        >
+                          <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
@@ -358,48 +527,70 @@ export default function AdminPage() {
           </>
         )}
 
-        {/* ── Submissions ── */}
+        {/* ─── Submissions ─── */}
         {activeTab === "submissions" && (
           <>
-            <p className="text-[#8fa8a5] text-xs">{pendingCount} pending review</p>
-            {userSubmittedPhotos.length === 0 ? (
-              <Card>
-                <div className="flex flex-col items-center gap-2 py-4">
-                  <Image size={28} className="text-[#8fa8a5]" />
-                  <p className="text-[#8fa8a5] text-sm">No submissions yet.</p>
-                </div>
-              </Card>
+            <h2 className="text-[#F8F8FF] text-sm font-bold" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              User Submissions
+              {pendingPhotos.length > 0 && (
+                <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">
+                  {pendingPhotos.length} pending
+                </span>
+              )}
+            </h2>
+
+            {subLoading ? (
+              <div className="flex justify-center py-4"><Loader2 size={24} className="text-[#FFDC73] animate-spin" /></div>
+            ) : allUserPhotos.filter((p) => p.submitted).length === 0 ? (
+              <Card><p className="text-[#8fa8a5] text-sm text-center py-2">No submissions yet.</p></Card>
             ) : (
-              userSubmittedPhotos.map((p) => (
-                <Card key={p.id}>
-                  <div className="flex gap-3">
-                    <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0">
-                      <img src={p.src} alt={p.caption} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[#F8F8FF] text-sm font-semibold truncate" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{p.displayName}</p>
-                      <p className="text-[#8fa8a5] text-xs">@{p.username}</p>
-                      {p.caption && <p className="text-[#8fa8a5] text-xs mt-1 italic truncate">{p.caption}</p>}
-                      <div className="flex items-center gap-1 mt-2">
-                        {p.status === "pending" ? (
-                          <>
-                            <button type="button" onClick={() => reviewUserPhoto(p.id, "approved")} className="flex-1 flex items-center justify-center gap-1 bg-green-500/20 text-green-400 rounded-lg py-1.5 text-xs font-semibold">
-                              <CheckCircle2 size={12} /> Approve
+              <div className="flex flex-col gap-2">
+                {allUserPhotos.filter((p) => p.submitted).map((photo) => (
+                  <Card key={photo.id}>
+                    <div className="flex gap-3">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0">
+                        <img src={photo.src} alt={photo.caption ?? "submission"} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {photo.caption && (
+                          <p className="text-[#F8F8FF] text-xs font-semibold truncate mb-1">{photo.caption}</p>
+                        )}
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                            photo.status === "approved"
+                              ? "bg-green-500/20 text-green-400"
+                              : photo.status === "rejected"
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-[#FFDC73]/10 text-[#FFDC73]"
+                          }`}
+                        >
+                          {photo.status}
+                        </span>
+                        {photo.status === "pending" && (
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => updateStatusMut.mutate({ id: photo.id, status: "approved" })}
+                              disabled={updateStatusMut.isPending}
+                              className="flex-1 flex items-center justify-center gap-1 bg-green-500/20 border border-green-500/30 rounded-lg py-1.5 text-green-400 text-xs font-bold disabled:opacity-50"
+                            >
+                              <Check size={10} /> Approve
                             </button>
-                            <button type="button" onClick={() => reviewUserPhoto(p.id, "rejected")} className="flex-1 flex items-center justify-center gap-1 bg-red-500/20 text-red-400 rounded-lg py-1.5 text-xs font-semibold">
-                              <XCircle size={12} /> Reject
+                            <button
+                              type="button"
+                              onClick={() => updateStatusMut.mutate({ id: photo.id, status: "rejected" })}
+                              disabled={updateStatusMut.isPending}
+                              className="flex-1 flex items-center justify-center gap-1 bg-red-500/20 border border-red-500/30 rounded-lg py-1.5 text-red-400 text-xs font-bold disabled:opacity-50"
+                            >
+                              <X size={10} /> Reject
                             </button>
-                          </>
-                        ) : (
-                          <span className={`text-xs font-bold px-2 py-1 rounded-full ${p.status === "approved" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                            {p.status === "approved" ? "✓ Approved" : "✗ Rejected"}
-                          </span>
+                          </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                </Card>
-              ))
+                  </Card>
+                ))}
+              </div>
             )}
           </>
         )}
