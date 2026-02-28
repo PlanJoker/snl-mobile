@@ -11,8 +11,8 @@ import PageHeader from "../components/PageHeader";
 import { toast } from "sonner";
 
 export default function HomePage() {
-  const { setActiveTab } = useAppStore();
-  const { getGoals, addGoal, removeGoal, userPhotos, currentUserId, addUserPhoto, markPhotoSubmitted, removeUserPhoto } = useUserStore();
+  const { setActiveTab, setAdminMode } = useAppStore();
+  const { getGoals, addGoal, removeGoal, userPhotos, currentUserId, addUserPhoto, markPhotoSubmitted, removeUserPhoto, logoutUser } = useUserStore();
   const { announcements, sessions, submitUserPhoto } = useAdminStore();
   const { calculateWAM, semesters } = useWAMStore();
   const goals = getGoals();
@@ -78,7 +78,7 @@ export default function HomePage() {
         subtitle="Saturday Normal Library"
         accent
         right={
-          <button type="button" onClick={() => toast.info("Login available on Manus version")} className="w-8 h-8 rounded-xl bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] flex items-center justify-center text-[#8fa8a5] active:scale-95">
+          <button type="button" onClick={() => { logoutUser(); setAdminMode(false); }} className="w-8 h-8 rounded-xl bg-[#0a3d39] border border-[rgba(255,220,115,0.12)] flex items-center justify-center text-[#8fa8a5] active:scale-95">
             <LogOut size={15} />
           </button>
         }
